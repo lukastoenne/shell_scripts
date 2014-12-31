@@ -1,0 +1,28 @@
+#!/bin/bash
+ 
+OUT=$(mktemp)
+find . -name "*.py" -type f -print | sort | xargs grep -n --color=never -H "$@" >  $OUT
+ 
+# Print text with line numbers
+sed = $OUT | sed 'N;s/\n/\t/'
+ 
+echo -n "enter a number to edit > "
+read -e LINE
+ 
+if [ "$LINE" == "" ] ; then
+        echo "nothing selected... exiting."
+        exit 0
+fi
+ 
+LINE=$LINE"p" # 4 -> 4p - for sed
+EDIT=$(cat $OUT | sed -n $LINE)         # file to edit
+ 
+rm $OUT
+ 
+FILE=$(echo $EDIT | cut -d":" -f1)
+NUM=$(echo $EDIT | cut -d":" -f2)
+ 
+# Now edit the file in scite or vim
+# scite $FILE -goto:$NUM &
+# vim $FILE +$NUM
+gedit $FILE +$NUM & disown

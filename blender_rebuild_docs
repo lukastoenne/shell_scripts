@@ -1,0 +1,3 @@
+#!/usr/bin/bash
+
+blender --background --python ./doc/python_api/sphinx_doc_gen.py

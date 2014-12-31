@@ -1,0 +1,43 @@
+#!/bin/bash
+ 
+OUT=$(mktemp)
+find . \( \
+	   -name "*.c"   \
+	-o -name "*.h"   \
+	-o -name "*.inl" \
+	-o -name "*.m"   \
+	-o -name "*.mm"  \
+	-o -name "*.cxx" \
+	-o -name "*.cpp" \
+	-o -name "*.cc"  \
+	-o -name "*.hxx" \
+	-o -name "*.hpp" \) \
+	-type f \
+	-printf '"%p"\n' | sort | xargs pcregrep -n --color=always -H "$@" >  $OUT
+ 
+# Print text with line numbers
+sed = $OUT | sed 'N;s/\n/\t/'
+ 
+echo -n "enter a number to edit > "
+read -e LINE
+ 
+if [ "$LINE" == "" ] ; then
+	rm $OUT
+	echo "nothing selected... exiting."
+	exit 0
+fi
+ 
+LINE=$LINE"p" # 4 -> 4p - for sed
+EDIT=$(cat $OUT | sed -n $LINE)         # file to edit
+ 
+rm $OUT
+ 
+FILE=$(echo $EDIT | cut -d":" -f1)
+NUM=$(echo $EDIT | cut -d":" -f2)
+ 
+# Now edit the file in scite or vim
+# scite $FILE -goto:$NUM &
+# vim $FILE +$NUM
+gvim $FILE +$NUM
+# gedit $FILE +$NUM
+# /opt/qtc/bin/qtcreator -client $PWD/$FILE+$NUM & disown

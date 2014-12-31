@@ -1,0 +1,98 @@
+#!/usr/bin/env python3
+import sys
+import os
+
+def open_editor(filename, num, editor="scite"):
+    if editor == "scite":
+        cmd = "scite \"%s\" -goto:%d & disown" % (filename, num)
+    elif editor == "qtcreator":
+        cmd = "qtcreator -client \"%s\"+%d & disown" % (filename, num)
+    elif editor == "geany":
+        cmd = "geany \"%s\"+%d & disown" % (filename, num)
+    elif editor == "gedit":
+        # cmd = "gedit \"%s\" +%d & disown" % (filename, num)
+        cmd = "gedit \"%s\" +%d" % (filename, num)
+    elif editor == "gvim":
+        cmd = "gvim \"%s\" +%d & disown" % (filename, num)
+    elif editor == "vim":
+        cmd = "vim \"%s\" +%d & disown" % (filename, num)
+    else:
+        raise Exception("editor %s is invalid" % editor)
+    
+    os.system(cmd)
+
+def main():
+    for arg in sys.argv[1:]:
+        print(arg)
+        if ":" in arg:
+            filename, num = arg.rsplit(":", 1)
+            num = int(num)
+        else:
+            filename, num = arg, 1
+
+        # workaround for smatch!
+        if "//" in filename:
+            filename = "/" + filename.split("//", 1)[1]
+
+        ext = os.path.splitext(filename)[1].lower()
+
+        if ext in {'.c', '.h', '.cpp', '.hpp', '.cxx', '.hxx', '.cc', '.hh'}:
+            editor = "qtcreator"
+        elif ext in {'.txt', '.cmake'}:
+            editor = "gvim"
+        else:
+            editor = "gvim"
+
+        if os.path.exists(filename):
+            filename = os.path.abspath(filename)
+        else:
+            lines = os.popen('find \"%s\" -name "%s" -print' % (os.getcwd(), filename)).readlines()
+            lines = list(lines)
+            if not lines:
+                print("Error %s not found in %s" % (filename, os.getcwd()))
+                return
+        
+            filename = lines[0].strip()
+
+        
+        if not os.path.exists(filename):
+            print("Error %s not found in %s" % (filename, os.getcwd()))
+            return
+        print(filename)
+        open_editor(filename, num, editor)
+        
+if __name__ == "__main__":
+    main()
+
+'''
+
+#!/bin/bash
+FILE=$(echo $1 | cut -d":" -f1)
+NUM=$(echo $1 | cut -d":" -f2 | grep "^[0-9]*$")
+if ! [ -f $FILE ]
+then
+    FILE=`find -name "$FILE" | head -n1 | tr -d '\n'`
+else
+    FILE=$PWD/
+fi
+
+if [ -b $NUM ]
+then
+    NUM="1"
+fi
+
+echo $FILE+$NUM
+
+case $FILE in
+    *.[ch]*)   ;;
+    *  )   scite $FILE -goto:$NUM & disown ;;
+esac
+
+
+# geany $FILE +$NUM & disown
+# 
+# vim $FILE +$NUM
+# gvim $FILE +$NUM & disown
+# gedit $FILE +$NUM & disown
+'''
+

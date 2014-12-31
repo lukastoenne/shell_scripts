@@ -1,0 +1,162 @@
+#!/usr/bin/env python3
+
+symlink_dirs = [
+#	"scripts/freestyle",
+	"scripts/modules",
+	"scripts/presets",
+	"scripts/startup",
+	"scripts/templates_osl",
+	"scripts/templates_py",
+]
+
+addons_contrib_dir = "/home/lukas/src/bf-blender-addons-contrib"
+
+addon_dir = "scripts/addons"
+external_addons = [
+	"/home/guest/src/modifier_nodes",
+	"/home/guest/src/pynodes_framework",
+	"/home/guest/src/addons/meadow",
+	"/home/guest/src/addons/sheepnado",
+	"/home/guest/src/addons/voxel_texture_align",
+	"/home/lukas/src/addons/meadow",
+]
+
+blender_header_path = "source/blender/blenkernel/BKE_blender.h"
+
+
+import argparse, os, subprocess, re, shutil
+
+parser = argparse.ArgumentParser(description='Update a Blender build')
+parser.add_argument('directory', type=str,
+                    help='Directory containing cmake files')
+
+args = parser.parse_args()
+#print(vars(args))
+
+
+def get_path():
+	path = os.path.abspath(args.directory)
+
+	if os.path.isdir(path):
+		return path
+	elif os.path.lexists(path):
+		raise Exception("%s is not a directory" % path)
+	else:
+		raise Exception("%s does not exist" % path)
+
+
+def get_blender_path():
+	path = get_path()
+	# TODO add basic checking, or read from cmake cache
+	return os.path.normpath(os.path.join(path, "../blender"))
+
+
+def get_blender_version(blender_path):
+	re_version = re.compile(r".*#define\s+BLENDER_VERSION\s+(\d+).*")
+	re_subversion = re.compile(r".*#define\s+BLENDER_SUBVERSION\s+(\d+).*")
+	
+	version = None
+	subversion = None
+	
+	f = open(os.path.join(blender_path, blender_header_path))
+	for line in f:
+		result = re_version.match(line)
+		if result:
+			version = result.group(1)
+		result = re_subversion.match(line)
+		if result:
+			subversion = result.group(1)
+		if version and subversion:
+			break
+	f.close()
+
+	if not (version and subversion):
+		raise Exception("Could not parse Blender version from BKE_blender.h")
+
+	return version, subversion
+
+
+def get_num_threads():
+	"""Determine the maximum useful number of threads based on cpuinfo"""
+	re_processor = re.compile(r".*processor\s*:\s*(\d+).*")
+	re_physical_id = re.compile(r".*physical id\s*:\s*(\d+).*")
+	re_siblings = re.compile(r".*siblings\s*:\s*(\d+).*")
+	
+	cpuinfo = []
+	
+	process = subprocess.Popen(["cat", "/proc/cpuinfo"], stdout=subprocess.PIPE, universal_newlines=True)
+	output = process.communicate()[0]
+	
+	for line in output.splitlines():
+		result = re_processor.match(line)
+		if result:
+			cpuinfo.append(dict())
+		
+		result = re_physical_id.match(line)
+		if result:
+			cpuinfo[-1]["physical id"] = int(result.group(1))
+		result = re_siblings.match(line)
+		if result:
+			cpuinfo[-1]["siblings"] = int(result.group(1))
+	
+	if not cpuinfo:
+		raise Exception("Could not retrieve cpu info")
+	
+	# XXX just assuming processor 0 is the one we want here ...
+	# could be improved for advanced systems
+	siblings = { cpu["physical id"] : cpu["siblings"] for cpu in cpuinfo }
+	return siblings[0]
+
+
+# Construct path variables
+path = get_path()
+blender_path = get_blender_path()
+blender_data_path = os.path.join(blender_path, "release")
+version, subversion = get_blender_version(blender_path)
+data_path = os.path.join(path, "bin", version[0:-2] + "." + version[-2:])
+num_threads = get_num_threads()
+
+# Main cmake update
+process = subprocess.Popen(["cmake", blender_path], stdout=subprocess.PIPE, cwd=path, universal_newlines=True)
+output = process.communicate()[0]
+
+# Update QtCreator project file
+process = subprocess.Popen(os.path.join(blender_path, "build_files", "cmake", "cmake_qtcreator_project.py"), stdout=subprocess.PIPE, cwd=path, universal_newlines=True)
+output = process.communicate()[0]
+
+# Build Blender and install
+process = subprocess.call(["make", "-j%d" % num_threads, "install"], cwd=path)
+#process = subprocess.Popen(["make", "-j%d" % num_threads, "install"], stdout=subprocess.PIPE, cwd=path, universal_newlines=True)
+#output = process.communicate()[0]
+
+# creates a symlink reliably, removing existing files and folders first
+def create_symlink(target, path):
+	if os.path.lexists(path):
+		if not os.path.islink(path) and os.path.isdir(path):
+			shutil.rmtree(path)
+		else:
+			os.remove(path)
+	os.symlink(target, path)
+
+# Replace script folders with symlinks
+for sdir in symlink_dirs:
+	sdir_symlink = os.path.join(data_path, sdir)
+	sdir_source = os.path.join(blender_data_path, sdir)
+	create_symlink(sdir_source, sdir_symlink)
+
+create_symlink(addons_contrib_dir, os.path.join(data_path, "scripts/addons_contrib"))
+
+# Create symlinks to various external addons
+#for addon in external_addons:
+#	if not os.path.exists(addon):
+#		#raise Exception("Addon directory %s does not exist" % addon)
+#		continue
+#	
+#	head, name = os.path.split(addon)
+#	if not name:
+#		head, name = os.path.split(head)
+#	if not name:
+#		raise Exception("Cannot extract addon name from path %s" % addon)
+#	
+#	addon_symlink = os.path.join(data_path, addon_dir, name)
+#	create_symlink(addon, addon_symlink)
